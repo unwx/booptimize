@@ -75,7 +75,12 @@ async fn main() {
     let in_doc_size = in_doc
         .metadata()
         .await
-        .expect("unable to get document filesize")
+        .unwrap_or_else(|e| {
+            panic!(
+                "unable to get original document filesize '{}': {}",
+                args.in_doc, e
+            )
+        })
         .len();
 
     let (raw_section_sender, raw_section_receiver) = mpsc::channel(1);
