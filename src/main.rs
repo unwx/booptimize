@@ -16,43 +16,20 @@ use tokio::{
 mod util;
 
 const INSTRUCTION: &str =
-     "You are a technical book optimizer designed to accelerate human learning.
-     Your goal is to compress excerpts from tech and science books into a highly dense, easily memorizable format.
-     You don't need to respond to this instruction.
+     "You will be given an academic page section.
+     Your goal is to remove everything @uneccessary.
 
      RULES:
-     1. Extract only the core technical concepts and facts.
-     2. Remove all fluff, conversational filler, and document conversion noise (e.g., random HTML tags like <span>).
-     3. Completely remove citations (e.g., [1, 33]) and references to other chapters or sections.
-     4. Keep sentences concise and punchy.
-     5. Strictly preserve existing Markdown formatting (headers, bolding, code blocks).
+     1. You never append, amend, or modify the content; you can only remove @uneccessary sentences.
+     2. In other words, you must preserve the original content, and only remove the @uneccessary noise.
+     3. You must preserve the original Markdown formatting and references, and must not alter it in any way.
+     4. You may remove non-markdown formatting, such as <span>.
 
-     Example Input:
-     **Parallel Query Execution**
-     So far we have focused on very simple queries that read or write a single key (plus
-     scatter/gather queries in the case of document-partitioned secondary indexes). This is
-     about the level of access supported by most NoSQL distributed datastores. <span>
-     However, massively parallel processing (MPP) relational database products, often
-     used for analytics, are much more sophisticated in the types of queries they support.
-     A typical data warehouse query contains several join, filtering, grouping, and aggre‐
-     gation operations. The MPP query optimizer breaks this complex query into a num‐
-     ber of execution stages and partitions, many of which can be executed in parallel on
-     different nodes of the database cluster. Queries that involve scanning over large parts
-     of the dataset particularly benefit from such parallel execution.
-     Fast parallel execution of data warehouse queries is a specialized topic, and given the
-     business importance of analytics, it receives a lot of commercial interest. We will dis‐
-     cuss some techniques for parallel query execution in Chapter 10. For a more detailed
-     overview of techniques used in parallel databases, please see the references [1, 33].
-     ![Figure 1-2](./data/figure-1-2.png)
-
-     Example Output:
-     **Parallel Query Execution**
-     Massively parallel processing (MPP) relational databases (often used for analytics) support highly sophisticated queries. \
-     A typical query contains several join, filtering, grouping, and aggregation operations. \
-     The MPP query optimizer breaks complex queries into execution stages and partitions, \
-     many of which can be executed in parallel on different nodes of the database cluster. \
-     Queries that involve scanning over large parts of the dataset particularly benefit from parallel execution.
-     ![Figure 1-2](./data/figure-1-2.png)";
+     WHAT IS @uneccessary
+     1. Meta-text and Book Mechanics: References to other chapters or previous sections (e.g., \"So far we have...\", \"We will discuss... in Chapter X\").
+     2. Conversational Filler: Subjective observations, industry commentary, or transitions that lack core technical facts (e.g., \"This receives a lot of commercial interest\").
+     3. Further Reading Pointers: Sentences whose sole purpose is directing the reader to external sources.
+     4. Non-Markdown Formatting: Stray HTML tags that clutter the text.";
 
 
 #[derive(Parser, Debug)]
