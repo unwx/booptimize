@@ -1,7 +1,8 @@
-use std::path::MAIN_SEPARATOR_STR;
+use std::{path::MAIN_SEPARATOR_STR, time::Duration};
 
 use crate::util::SectionReader;
 use clap::Parser;
+use indicatif::{ProgressBar, ProgressStyle};
 use ollama_rs::{
     Ollama,
     generation::chat::{ChatMessage, MessageRole, request::ChatMessageRequest},
@@ -22,10 +23,10 @@ const INSTRUCTION: &str =
      RULES:
      1. You never append, amend, or modify the content; you can only remove @uneccessary sentences.
      2. In other words, you must preserve the original content, and only remove the @uneccessary noise.
-     3. You must preserve the original Markdown formatting and references, and must not alter it in any way.
+     3. You must preserve the original Markdown formatting, references and tables, and must not alter it in any way.
      4. You may remove non-markdown formatting, such as <span>.
 
-     WHAT IS @uneccessary
+     WHAT IS @uneccessary:
      1. Meta-text and Book Mechanics: References to other chapters or previous sections (e.g., \"So far we have...\", \"We will discuss... in Chapter X\").
      2. Conversational Filler: Subjective observations, industry commentary, or transitions that lack core technical facts (e.g., \"This receives a lot of commercial interest\").
      3. Further Reading Pointers: Sentences whose sole purpose is directing the reader to external sources.
@@ -76,9 +77,15 @@ async fn main() {
                 args.out_doc, e
             )
         });
+    let in_doc_size = in_doc
+        .metadata()
+        .await
+        .expect("unable to get document filesize")
+        .len();
 
     let (raw_section_sender, raw_section_receiver) = mpsc::channel(1);
     let (optimized_section_sender, optimized_section_receiver) = mpsc::channel(3);
+    let (progress_sender, progress_receiver) = mpsc::channel(1);
 
     let read_handle = tokio::spawn(read(in_doc, raw_section_sender));
     let optimize_handle = tokio::spawn(optimize(
@@ -86,57 +93,45 @@ async fn main() {
         raw_section_receiver,
         optimized_section_sender,
     ));
-    let write_handle = tokio::spawn(write(out_doc, optimized_section_receiver));
+    let write_handle = tokio::spawn(write(out_doc, optimized_section_receiver, progress_sender));
+    let notify_handle = tokio::spawn(notify_progress(in_doc_size, progress_receiver));
 
-    let _ = tokio::join!(read_handle, optimize_handle, write_handle);
+    let _ = tokio::join!(read_handle, optimize_handle, write_handle, notify_handle);
 }
 
-async fn read(file: File, raw_section_sender: Sender<String>) {
-    let file_size = file
-        .metadata()
-        .await
-        .expect("unable to get document size")
-        .len();
-
+async fn read(file: File, raw_section_sender: Sender<Section>) {
     let mut reader = SectionReader::new(BufReader::new(file));
 
     loop {
-        let section = reader
+        let section_content = reader
             .next()
             .await
             .expect("unable to read next document section")
             .to_string();
+        let file_offset = reader.stream_position().await.unwrap_or(0) as u64;
 
-        if section.is_empty() {
+        if section_content.is_empty() {
             return;
         }
 
         raw_section_sender
-            .send(section)
+            .send(Section::new(section_content, file_offset))
             .await
             .expect("document raw_section channel is closed");
-
-        let current_pos = reader.stream_position().await.unwrap_or(0);
-        println!(
-            "({:.2}%): {}/{}",
-            (current_pos as f64 / file_size as f64) * 100.0,
-            current_pos,
-            file_size
-        );
     }
 }
 
 async fn optimize(
     model: String,
-    mut raw_section_receiver: Receiver<String>,
-    optimized_section_sender: Sender<String>,
+    mut raw_section_receiver: Receiver<Section>,
+    optimized_section_sender: Sender<Section>,
 ) {
     let ollama = Ollama::default();
 
     while let Some(section) = raw_section_receiver.recv().await {
         let messages = vec![
             ChatMessage::new(MessageRole::System, INSTRUCTION.to_string()),
-            ChatMessage::new(MessageRole::User, section),
+            ChatMessage::new(MessageRole::User, section.content),
         ];
 
         let request = ChatMessageRequest::new(model.clone(), messages).options(
@@ -155,18 +150,22 @@ async fn optimize(
             .expect("unable to make Ollama request to optimize the section");
 
         optimized_section_sender
-            .send(response)
+            .send(Section::new(response, section.file_offset))
             .await
             .expect("document optimized_section channel is closed");
     }
 }
 
-async fn write(file: File, mut optimized_section_receiver: Receiver<String>) {
+async fn write(
+    file: File,
+    mut optimized_section_receiver: Receiver<Section>,
+    progress_sender: Sender<u64>,
+) {
     let mut writer = BufWriter::new(file);
 
     while let Some(section) = optimized_section_receiver.recv().await {
         writer
-            .write_all(section.as_bytes())
+            .write_all(section.content.as_bytes())
             .await
             .expect("unable to write next optimized document section");
         writer
@@ -177,7 +176,58 @@ async fn write(file: File, mut optimized_section_receiver: Receiver<String>) {
             .flush()
             .await
             .expect("unable to flush next optimized document section");
+
+        progress_sender
+            .send(section.file_offset)
+            .await
+            .expect("progress_bar channel is closed");
     }
 
     println!("Done");
+}
+
+async fn notify_progress(file_len: u64, mut progress_offset_receiver: Receiver<u64>) {
+    let progress_bar = ProgressBar::new(file_len);
+    progress_bar.set_style(
+        ProgressStyle::with_template(
+            "[{elapsed_precise}] [{wide_bar:.cyan/white}] {bytes}/{total_bytes} (ETA: {eta})",
+        )
+        .unwrap()
+        .progress_chars("#>-"),
+    );
+
+    loop {
+        tokio::select! {
+            offset = progress_offset_receiver.recv() => {
+                 match offset {
+                    Some(it) => progress_bar.set_position(it),
+                    None => break,
+                }
+            }
+            _ = tokio::time::sleep(Duration::from_millis(100)) => {
+                progress_bar.tick();
+            }
+        }
+    }
+
+    while let Some(offset) = progress_offset_receiver.recv().await {
+        progress_bar.inc(offset);
+    }
+
+    progress_bar.finish_with_message("Done");
+}
+
+
+struct Section {
+    content: String,
+    file_offset: u64,
+}
+
+impl Section {
+    pub fn new(content: String, file_offset: u64) -> Self {
+        Self {
+            content,
+            file_offset,
+        }
+    }
 }
