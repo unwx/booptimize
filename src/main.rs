@@ -63,10 +63,6 @@ async fn main() {
     println!("Using Ollama model: {}", &args.model);
     println!("Using instruction file: {}", &args.instruction_file);
 
-    if !args.in_doc.ends_with(".md") {
-        panic!("only Markdown files are supported at the moment");
-    }
-
     let (instruction, in_doc, out_doc, in_doc_meta) = tokio::try_join!(
         async {
             tokio::fs::read_to_string(&args.instruction_file)
