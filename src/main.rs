@@ -1,3 +1,5 @@
+use std::path::MAIN_SEPARATOR_STR;
+
 use crate::util::SectionReader;
 use clap::Parser;
 use ollama_rs::{
@@ -7,7 +9,7 @@ use ollama_rs::{
 };
 use tokio::{
     fs::{File, OpenOptions},
-    io::{AsyncWriteExt, BufReader},
+    io::{AsyncWriteExt, BufReader, BufWriter},
     sync::mpsc::{self, Receiver, Sender},
 };
 
@@ -99,7 +101,7 @@ async fn main() {
         });
 
     let (raw_section_sender, raw_section_receiver) = mpsc::channel(1);
-    let (optimized_section_sender, optimized_section_receiver) = mpsc::channel(1);
+    let (optimized_section_sender, optimized_section_receiver) = mpsc::channel(3);
 
     let read_handle = tokio::spawn(read(in_doc, raw_section_sender));
     let optimize_handle = tokio::spawn(optimize(
@@ -165,7 +167,6 @@ async fn optimize(
                 .temperature(0.0)
                 .seed(0)
                 .mirostat(0)
-                .num_predict(2048)
                 .num_ctx(8192)
                 .num_predict(-1)
                 .repeat_penalty(1.00),
@@ -183,11 +184,22 @@ async fn optimize(
     }
 }
 
-async fn write(mut file: File, mut optimized_section_receiver: Receiver<String>) {
+async fn write(file: File, mut optimized_section_receiver: Receiver<String>) {
+    let mut writer = BufWriter::new(file);
+
     while let Some(section) = optimized_section_receiver.recv().await {
-        file.write_all(section.as_bytes())
+        writer
+            .write_all(section.as_bytes())
             .await
-            .expect("unable to write optimized section");
+            .expect("unable to write next optimized document section");
+        writer
+            .write(MAIN_SEPARATOR_STR.as_bytes())
+            .await
+            .expect("unable to write next optimized document section new-line");
+        writer
+            .flush()
+            .await
+            .expect("unable to flush next optimized document section");
     }
 
     println!("Done");
