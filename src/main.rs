@@ -1,4 +1,4 @@
-use std::{path::MAIN_SEPARATOR_STR, time::Duration};
+use std::time::Duration;
 
 use crate::util::SectionReader;
 use clap::Parser;
@@ -15,6 +15,12 @@ use tokio::{
 };
 
 mod util;
+
+const LINE_ENDING: &str = if cfg!(target_family = "windows") {
+    "\r\n"
+} else {
+    "\n"
+};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -171,7 +177,7 @@ async fn write(
             .await
             .expect("unable to write next optimized document section");
         writer
-            .write(MAIN_SEPARATOR_STR.as_bytes())
+            .write(LINE_ENDING.as_bytes())
             .await
             .expect("unable to write next optimized document section new-line");
         writer
