@@ -16,23 +16,6 @@ use tokio::{
 
 mod util;
 
-const INSTRUCTION: &str =
-     "You will be given an academic page section.
-     Your goal is to remove everything @uneccessary.
-
-     RULES:
-     1. You never append, amend, or modify the content; you can only remove @uneccessary sentences.
-     2. In other words, you must preserve the original content, and only remove the @uneccessary noise.
-     3. You must preserve the original Markdown formatting, references and tables, and must not alter it in any way.
-     4. You may remove non-markdown formatting, such as <span>.
-
-     WHAT IS @uneccessary:
-     1. Meta-text and Book Mechanics: References to other chapters or previous sections (e.g., \"So far we have...\", \"We will discuss... in Chapter X\").
-     2. Conversational Filler: Subjective observations, industry commentary, or transitions that lack core technical facts (e.g., \"This receives a lot of commercial interest\").
-     3. Further Reading Pointers: Sentences whose sole purpose is directing the reader to external sources.
-     4. Non-Markdown Formatting: Stray HTML tags that clutter the text.";
-
-
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
@@ -47,6 +30,10 @@ struct Args {
     /// The Ollama model to use.
     #[arg(short = 'm', long)]
     model: String,
+
+    /// File containing the instructions for the model.
+    #[arg(short = 'i', long)]
+    instruction_file: String,
 }
 
 #[tokio::main]
@@ -60,6 +47,14 @@ async fn main() {
         panic!("only Markdown files are supported at the moment");
     }
 
+    let instruction = tokio::fs::read_to_string(&args.instruction_file)
+        .await
+        .unwrap_or_else(|e| {
+            panic!(
+                "unable to open instruction file for reading '{}': {}",
+                args.instruction_file, e
+            )
+        });
     let in_doc = File::open(&args.in_doc).await.unwrap_or_else(|e| {
         panic!(
             "unable to open original document for reading '{}': {}",
@@ -90,6 +85,7 @@ async fn main() {
     let read_handle = tokio::spawn(read(in_doc, raw_section_sender));
     let optimize_handle = tokio::spawn(optimize(
         args.model,
+        instruction,
         raw_section_receiver,
         optimized_section_sender,
     ));
@@ -123,6 +119,7 @@ async fn read(file: File, raw_section_sender: Sender<Section>) {
 
 async fn optimize(
     model: String,
+    instruction: String,
     mut raw_section_receiver: Receiver<Section>,
     optimized_section_sender: Sender<Section>,
 ) {
@@ -130,7 +127,7 @@ async fn optimize(
 
     while let Some(section) = raw_section_receiver.recv().await {
         let messages = vec![
-            ChatMessage::new(MessageRole::System, INSTRUCTION.to_string()),
+            ChatMessage::new(MessageRole::System, instruction.clone()),
             ChatMessage::new(MessageRole::User, section.content),
         ];
 
