@@ -6,6 +6,7 @@ CRITICAL FORMATTING RULES:
 2. High-Fidelity Condensation: You must rewrite the text to be shorter and clearer. Simplify convoluted academic phrasing, merge redundant sentences, and use active voice. However, you MUST NOT hallucinate new information or omit any underlying technical definitions, arguments, or facts.
 3. Preserve Citations: You must keep all in-line academic citations, bibliography references (e.g., [1], (Author, 2024)), and Markdown links attached to the concepts they support.
 4. Clean HTML: You should remove stray HTML tags (like <span id="page-118-0"></span> or <div>).
+5. DO NOT write anything beside given to you task (e.g, a summary of the operations you've done).
 
 WHAT TO REMOVE (@unnecessary):
 Delete a sentence entirely, without attempting to rephrase it, ONLY if it falls into one of these strict categories:
