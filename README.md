@@ -12,7 +12,13 @@ Recommended to use it in pair with [marker_pdf](https://github.com/datalab-to/ma
 
 Usage example
 ```
-booptimize.exe original_document.md path/to/resulting_doc.md --model=<your_ollama_model> --instruction-file=/path/to/your/instruction.txt
+booptimize original_document.md path/to/resulting_doc.md --model=<your_ollama_model> --instruction-file=/path/to/your/instruction.txt
+
+booptimize original_document.md path/to/resulting_doc.md \
+--model=<your_ollama_model> \
+--instruction-file=/path/to/your/instruction.txt \
+--context-window=16184 \
+--resume-from='^(?m)^#{1,6}.*Mapping system models to the real world.*$'
 ```
 
 Feel free to use existing instructions under `instructions/` directory,

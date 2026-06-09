@@ -1,11 +1,12 @@
 use crate::Section;
+use regex::Regex;
 use tokio::{
     io::{self, AsyncBufReadExt, AsyncRead, AsyncSeekExt, BufReader},
     sync::mpsc::Sender,
 };
 
 /// Reads the entire content from `source`, section-by-section, and sends with `raw_section_sender`.
-pub async fn read<R>(source: R, raw_section_sender: Sender<Section>)
+pub async fn read<R>(source: R, mut resume_from: Option<Regex>, raw_section_sender: Sender<Section>)
 where
     R: AsyncRead + AsyncSeekExt + Unpin,
 {
@@ -15,16 +16,25 @@ where
         let section_content = reader
             .next()
             .await
-            .expect("unable to read the next document section")
-            .to_string();
-        let file_offset = reader.stream_position().await.unwrap_or(0) as u64;
+            .expect("unable to read the next document section");
 
         if section_content.is_empty() {
             return;
         }
 
+        if let Some(pattern) = resume_from.as_ref() {
+            if !pattern.is_match(&section_content) {
+                continue;
+            }
+
+            resume_from = None;
+        }
+
         raw_section_sender
-            .send(Section::new(section_content, file_offset))
+            .send(Section::new(
+                section_content.to_string(),
+                reader.stream_position().await.unwrap_or(0) as u64,
+            ))
             .await
             .expect("inter-thread raw_section channel is closed");
     }
